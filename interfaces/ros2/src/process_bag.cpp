@@ -64,6 +64,29 @@ int main(int argc, char** argv) {
   const std::string& pc_topic = config.topic_config.pointcloud_topic;
   const std::string& imu_topic = config.topic_config.imu_topic;
 
+  const auto pc_type = topic_types.find(pc_topic);
+  if (pc_type == topic_types.end()) {
+    LOG(E, "Pointcloud topic '" << pc_topic << "' not found in bag.");
+    rclcpp::shutdown();
+    return 1;
+  }
+  bool supported_pc_type = pc_type->second == "sensor_msgs/msg/PointCloud2";
+#ifdef BIEVR_WITH_LIVOX
+  supported_pc_type = supported_pc_type || pc_type->second == "livox_ros_driver2/msg/CustomMsg" ||
+                      pc_type->second == "livox_ros_driver/msg/CustomMsg";
+#endif
+  if (!supported_pc_type) {
+    LOG(E, "Unsupported pointcloud message type '" << pc_type->second << "' on '" << pc_topic
+                                                  << "'. Livox bags require livox_ros_driver2 "
+                                                     "to be available at build time.");
+    rclcpp::shutdown();
+    return 1;
+  }
+  LOG(I, "Reading pointcloud topic '" << pc_topic << "' with type " << pc_type->second);
+
+  size_t num_pointclouds = 0;
+  size_t num_imus = 0;
+
   while (rclcpp::ok() && reader.has_next()) {
     auto bag_msg = reader.read_next();
     const std::string& topic = bag_msg->topic_name;
@@ -77,26 +100,38 @@ int main(int argc, char** argv) {
     if (type == "sensor_msgs/msg/PointCloud2") {
       auto msg = deserialize<sensor_msgs::msg::PointCloud2>(serialized);
       bievr::StampedIntensityPointcloud pointcloud;
-      bievr::msgToPointcloud(msg, pointcloud);
-      synchronizer->addPointcloud(pointcloud);
+      if (bievr::msgToPointcloud(msg, pointcloud) && synchronizer->addPointcloud(pointcloud)) {
+        ++num_pointclouds;
+      }
     }
 #ifdef BIEVR_WITH_LIVOX
-    else if (type == "livox_ros_driver2/msg/CustomMsg") {
+    else if (type == "livox_ros_driver2/msg/CustomMsg" || type == "livox_ros_driver/msg/CustomMsg") {
+      // rosbags-converted gen1 messages retain their old package name, but their
+      // ROS2 CDR layout matches CustomMsg from driver2. Gen1's timebase can use
+      // the sensor clock, so use the header stamp just as the ROS1 wrapper does.
       auto msg = deserialize<livox_ros_driver2::msg::CustomMsg>(serialized);
       bievr::StampedIntensityPointcloud pointcloud;
-      bievr::msgToPointcloud(msg, pointcloud);
-      synchronizer->addPointcloud(pointcloud);
+      const bool converted = type == "livox_ros_driver/msg/CustomMsg"
+          ? bievr::conv_detail::livoxToStampedIntensity(
+                msg, bievr::conv_detail::stampToNs(msg.header.stamp), "00_conversion_livox",
+                pointcloud)
+          : bievr::msgToPointcloud(msg, pointcloud);
+      if (converted && synchronizer->addPointcloud(pointcloud)) {
+        ++num_pointclouds;
+      }
     }
 #endif
     else if (type == "sensor_msgs/msg/Imu") {
       auto msg = deserialize<sensor_msgs::msg::Imu>(serialized);
       bievr::ImuMeasurement imu;
-      bievr::msgToImuMeasurement(msg, imu);
-      synchronizer->addImu(imu);
+      if (bievr::msgToImuMeasurement(msg, imu) && synchronizer->addImu(imu)) {
+        ++num_imus;
+      }
     }
   }
 
-  LOG(I, "Done with bag.");
+  LOG(I, "Done with bag. Accepted " << num_pointclouds << " pointclouds and " << num_imus
+                                    << " IMU messages.");
   reader.close();
   LOG(I, "Bag closed");
 

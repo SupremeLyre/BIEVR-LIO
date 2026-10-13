@@ -178,11 +178,27 @@ sudo ./BIEVR-LIO/docker/scripts/install_ceres.sh
 `livox_ros_driver2` is found in the workspace at build time. Otherwise BIEVR-LIO
 builds fine without it. If you need to process Livox data, clone and build the
 driver into `~/colcon_ws/src` *before* building BIEVR-LIO (it also needs its
-Livox-SDK2 installed system-wide). Only gen2 exists for ROS2 (enables
-`BIEVR_WITH_LIVOX`):
+Livox-SDK2 installed system-wide). The wrapper uses the gen2 message definitions
+for Livox deserialization (enables `BIEVR_WITH_LIVOX`):
 
 - [livox_ros_driver2](https://github.com/Livox-SDK/livox_ros_driver2) +
   [Livox-SDK2](https://github.com/Livox-SDK/Livox-SDK2)
+
+For offline processing, `process_bag` also accepts `livox_ros_driver/msg/CustomMsg`
+from ROS1 bags converted with `rosbags-convert`. These messages share the ROS2
+CDR layout of driver2's `CustomMsg`; the reader uses `header.stamp` for the
+converted gen1 messages and `timebase` for native driver2 messages. Keep
+`livox_ros_driver2` available at build time for its message definitions; running
+a hardware driver or renaming the converted bag's message types is unnecessary.
+Unsupported pointcloud types are reported at startup instead of silently skipped.
+
+For online replay with `ros2 bag play`, the message-only ROS2 compatibility package
+`livox_ros_driver` in `interfaces/ros2_livox_legacy` supplies typesupport for the
+legacy names. It is built with `--packages-up-to bievr_lio_ros2`; source the
+workspace in both the player and subscriber terminals. `process_topics` accepts
+`livox_ros_driver/msg/CustomMsg`, `livox_interfaces/msg/CustomMsg` (from
+`livox_ros2_driver`), and `livox_ros_driver2/msg/CustomMsg`. Gen1 topics use the
+header timestamp, matching the offline reader.
 
 Build and source it (from the workspace root, so colcon picks up both `BIEVR/`,
 the core, and `interfaces/ros2`):
@@ -238,6 +254,14 @@ Process live topics:
 
 ```bash
 ros2 launch bievr_lio_ros2 process_topics.launch.py sensor_config:=<sensor_config>
+```
+
+To feed a converted Shield01 bag to the online node, start it with
+`sensor_config:=gamma`, then run this in another terminal after sourcing the
+same workspace:
+
+```bash
+ros2 bag play /path/to/Shield_tunnel1_gamma_ros2 --topics /livox/lidar /livox/imu
 ```
 
 Replay a rosbag2 directory:

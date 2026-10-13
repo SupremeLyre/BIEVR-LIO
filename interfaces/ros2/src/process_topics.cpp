@@ -66,6 +66,20 @@ int main(int argc, char** argv) {
   }
   LOG(I, "Pointcloud topic type: " << pc_type);
 
+  bool supported_pc_type = pc_type == "sensor_msgs/msg/PointCloud2";
+#ifdef BIEVR_WITH_LIVOX
+  supported_pc_type = supported_pc_type || pc_type == "livox_ros_driver2/msg/CustomMsg" ||
+                      pc_type == "livox_ros_driver/msg/CustomMsg" ||
+                      pc_type == "livox_interfaces/msg/CustomMsg";
+#endif
+  if (!supported_pc_type) {
+    LOG(E, "Unsupported pointcloud message type '" << pc_type << "' on '" << pc_topic
+                                                  << "'. Livox topics require livox_ros_driver2 "
+                                                     "to be available at build time.");
+    rclcpp::shutdown();
+    return 1;
+  }
+
   // QoS must be compatible with the publisher. SensorDataQoS (best-effort)
   // matches most LiDAR drivers (e.g. Ouster); some drivers (e.g. Livox) publish
   // reliable — adjust here if you see no messages arriving.
@@ -84,12 +98,21 @@ int main(int argc, char** argv) {
           }
         }
 #ifdef BIEVR_WITH_LIVOX
-        else if (pc_type == "livox_ros_driver2/msg/CustomMsg") {
+        else if (pc_type == "livox_ros_driver2/msg/CustomMsg" ||
+                 pc_type == "livox_ros_driver/msg/CustomMsg" ||
+                 pc_type == "livox_interfaces/msg/CustomMsg") {
+          // The Livox messages have the same CDR layout. Legacy/gen1 topics
+          // use the header stamp to stay on the same clock as the IMU.
           livox_ros_driver2::msg::CustomMsg msg;
           rclcpp::Serialization<livox_ros_driver2::msg::CustomMsg>().deserialize_message(
               serialized.get(), &msg);
           bievr::StampedIntensityPointcloud pointcloud;
-          if (bievr::msgToPointcloud(msg, pointcloud)) {
+          const bool converted = pc_type == "livox_ros_driver2/msg/CustomMsg"
+              ? bievr::msgToPointcloud(msg, pointcloud)
+              : bievr::conv_detail::livoxToStampedIntensity(
+                    msg, bievr::conv_detail::stampToNs(msg.header.stamp), "00_conversion_livox",
+                    pointcloud);
+          if (converted) {
             synchronizer->addPointcloud(pointcloud);
           }
         }
@@ -108,6 +131,8 @@ int main(int argc, char** argv) {
         synchronizer->addImu(imu);
       });
 
+  LOG(I, "Subscribed to pointcloud topic '" << pc_topic << "' and IMU topic '"
+                                           << config.topic_config.imu_topic << "'.");
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
