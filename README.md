@@ -151,10 +151,13 @@ docker exec -it BIEVR-LIO-ROS2 /bin/bash
 
 ### Build
 
-Requires [ROS2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html) and
+Requires [ROS2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html) or
+[ROS2 Lyrical](https://docs.ros.org/en/lyrical/Installation.html) and
 `python3-colcon-common-extensions`
 (`sudo apt install python3-colcon-common-extensions`). The system was tested on
-Jazzy, but other ROS2 distributions might also work.
+Jazzy; builds on Lyrical were verified with and without Livox support. Lyrical
+uses exported CMake targets when `ament_target_dependencies` is unavailable;
+older distributions retain the existing dependency-linking path.
 
 Create a colcon workspace and clone BIEVR-LIO into it:
 
@@ -190,6 +193,10 @@ source /opt/ros/jazzy/setup.bash
 colcon build --packages-up-to bievr_lio_ros2
 source install/setup.bash
 ```
+
+For Lyrical, replace `/opt/ros/jazzy/setup.bash` with
+`/opt/ros/lyrical/setup.bash` in the commands above. With zsh, use `setup.zsh`
+for both the ROS and workspace setup scripts.
 </details>
 
 ## Run data

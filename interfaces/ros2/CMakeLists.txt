@@ -62,7 +62,15 @@ add_executable(process_topics src/process_topics.cpp)
 add_executable(process_bag src/process_bag.cpp)
 
 foreach(target process_topics process_bag)
-  ament_target_dependencies(${target} ${ament_dependencies})
+  if(COMMAND ament_target_dependencies)
+    ament_target_dependencies(${target} ${ament_dependencies})
+  else()
+    # ROS2 Lyrical removed ament_target_dependencies. Link the exported targets
+    # instead; they carry include directories and transitive dependencies.
+    foreach(dependency IN LISTS ament_dependencies)
+      target_link_libraries(${target} ${${dependency}_TARGETS})
+    endforeach()
+  endif()
   target_include_directories(${target} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${YAML_CPP_INCLUDE_DIR}
