@@ -1,0 +1,22 @@
+# Livox MID360 with its built-in IMU and livox_ros_driver2 CustomMsg output.
+# Use xfer_format=1, multi_topic=0 and zero driver extrinsic_parameter values
+# so the point coordinates remain in the native LiDAR frame.
+topics:
+  pointcloud: "/livox/lidar"
+  imu: "/livox/imu"
+
+# T_IMU_LIDAR: p_IMU = R * p_LIDAR + t. Translation is in meters.
+# Reference: https://github.com/hku-mars/FAST_LIO/blob/main/config/mid360.yaml
+# These extrinsics apply to the built-in IMU; an external IMU needs calibration.
+calibration:
+  translation: [-0.011, -0.02329, 0.04412]
+  rotation: [1, 0, 0,
+             0, 1, 0,
+             0, 0, 1]
+
+lidar:
+  min_range_m: 0.5 # Adjust to exclude the mounting platform and nearby objects.
+  max_range_m: 100 # Processing cutoff; not a guaranteed sensor detection range.
+
+imu:
+  normalized: -1 # Auto-detect acceleration units (g or m/s^2) at initialization.
